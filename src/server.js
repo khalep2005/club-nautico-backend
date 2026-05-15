@@ -18,11 +18,13 @@ const authRoutes = require('./routes/authRoutes');
 const solicitudesRoutes = require('./routes/solicitudesRoutes');
 const sociosRoutes = require('./routes/sociosRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const embarcacionesRoutes = require('./routes/embarcacionesRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/socios', sociosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/embarcaciones', embarcacionesRoutes);
 
 // Ruta de prueba
 app.get('/', (req, res) => {
