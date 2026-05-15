@@ -19,12 +19,14 @@ const solicitudesRoutes = require('./routes/solicitudesRoutes');
 const sociosRoutes = require('./routes/sociosRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const embarcacionesRoutes = require('./routes/embarcacionesRoutes');
+const radasRoutes = require('./routes/radasRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/socios', sociosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/embarcaciones', embarcacionesRoutes);
+app.use('/api/radas', radasRoutes);
 
 // Ruta de prueba
 app.get('/', (req, res) => {
