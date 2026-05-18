@@ -67,4 +67,32 @@ const aprobarZarpe = async (req, res) => {
     }
 };
 
+// 4. Obtener el detalle completo de un Zarpe para impresión
+const obtenerZarpePorId = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = `
+            SELECT 
+                z.id_zarpe, z.fecha_salida, z.hora_salida, z.fecha_retorno, z.hora_retorno, z.destino, z.pasajeros, z.estado,
+                s.nombres AS socio_nombres, s.apellidos AS socio_apellidos,
+                e.nombre_nave, e.matricula, e.tipo, e.eslora,
+                t.nombres AS tripulante_nombres, t.apellidos AS tripulante_apellidos, t.licencia, t.rol
+            FROM zarpes z
+            INNER JOIN socios s ON z.id_socio = s.id_socio
+            INNER JOIN embarcaciones e ON z.id_embarcacion = e.id_embarcacion
+            INNER JOIN tripulantes t ON z.id_tripulante = t.id_tripulante
+            WHERE z.id_zarpe = $1
+        `;
+        const resultado = await pool.query(query, [id]);
+        
+        if (resultado.rowCount === 0) {
+            return res.status(404).json({ mensaje: 'Zarpe no encontrado.' });
+        }
+        res.status(200).json(resultado.rows[0]);
+    } catch (error) {
+        console.error('Error al obtener detalle del zarpe:', error);
+        res.status(500).json({ mensaje: 'Error al generar los datos del documento.' });
+    }
+};
+
 module.exports = { obtenerZarpes, crearZarpe, aprobarZarpe };
