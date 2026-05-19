@@ -2,11 +2,12 @@ const pool = require('../config/db');
 
 // Función para CREAR solicitud e inscribir socio (Transacción)
 const crearSolicitud = async (req, res) => {
-    // 1. Ahora recibimos la clasificación desde el Frontend
-    const { id_tipo_doc, dni, nombres, apellidos, telefono,correo, tipo_solicitud, clasificacion } = req.body;
+    // 1. Ahora recibimos la clasificación y el tipo de documento desde el Frontend
+    const { id_tipo_doc, dni, nombres, apellidos, telefono, correo, tipo_solicitud, clasificacion } = req.body;
 
-    if (!dni || !nombres || !apellidos || !clasificacion) {
-        return res.status(400).json({ mensaje: 'DNI, nombres, apellidos y clasificación son obligatorios.' });
+    // Validación más precisa: requerimos id_tipo_doc y el número (dni)
+    if (!id_tipo_doc || !dni || !nombres || !apellidos || !clasificacion) {
+        return res.status(400).json({ mensaje: 'El tipo y número de documento, nombres, apellidos y clasificación son obligatorios.' });
     }
 
     const client = await pool.connect();
@@ -14,12 +15,12 @@ const crearSolicitud = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 2. REGLA DE NEGOCIO: Evitar doble inscripción verificando el DNI
+        // 2. REGLA DE NEGOCIO: Evitar doble inscripción verificando el número de documento
         const checkDuplicado = await client.query('SELECT id_socio FROM socios WHERE dni = $1', [dni]);
         
         if (checkDuplicado.rows.length > 0) {
             await client.query('ROLLBACK'); // Cancelamos la operación
-            return res.status(400).json({ mensaje: 'Rechazado: Este postulante (DNI) ya tiene una inscripción registrada en el Club.' });
+            return res.status(400).json({ mensaje: 'Rechazado: El número de documento ingresado ya tiene una inscripción registrada en el Club.' });
         }
 
         // 3. Insertar en la tabla SOCIOS incluyendo la CLASIFICACIÓN
