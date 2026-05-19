@@ -4,10 +4,19 @@ const pool = require('../config/db');
 const obtenerSocios = async (req, res) => {
     try {
         const query = `
-            SELECT id_socio, nombres, apellidos, dni, clasificacion, estado_membresia, fecha_ingreso 
-            FROM socios 
-            WHERE estado_membresia != 'Pendiente' AND estado_membresia != 'Rechazado'
-            ORDER BY fecha_ingreso DESC
+            SELECT 
+                soc.id_socio, 
+                soc.nombres, 
+                soc.apellidos, 
+                soc.dni, 
+                soc.clasificacion, 
+                soc.estado_membresia, 
+                soc.fecha_ingreso,
+                td.siglas AS tipo_doc_siglas
+            FROM socios soc
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            WHERE soc.estado_membresia != 'Pendiente' AND soc.estado_membresia != 'Rechazado'
+            ORDER BY soc.fecha_ingreso DESC
         `;
         const resultado = await pool.query(query);
         
