@@ -65,6 +65,137 @@ const obtenerConsumosPendientes = async (req, res) => {
     }
 };
 
+// Función para GENERAR la facturación mensual (Finanzas).
+// Toma todos los consumos "Pendiente de Facturación", los agrupa por socio,
+// crea una fila en "facturacion" por cada socio, y marca esos consumos
+// como "Facturado" para que no se dupliquen en el siguiente cierre de mes.
+const generarFacturacionMensual = async (req, res) => {
+    const id_usuario_emisor = req.usuario.id_usuario;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Traer consumos pendientes agrupados por socio
+        const consumosQuery = `
+            SELECT id_consumo, id_socio, monto
+            FROM consumos
+            WHERE estado = 'Pendiente de Facturación'
+        `;
+        const resConsumos = await client.query(consumosQuery);
+
+        if (resConsumos.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(200).json({ mensaje: 'No hay consumos pendientes para facturar.', facturas_generadas: 0 });
+        }
+
+        // 2. Agrupar montos por socio
+        const totalesPorSocio = {};
+        const idsConsumosPorSocio = {};
+        for (const fila of resConsumos.rows) {
+            const key = fila.id_socio;
+            totalesPorSocio[key] = (totalesPorSocio[key] || 0) + Number(fila.monto);
+            if (!idsConsumosPorSocio[key]) idsConsumosPorSocio[key] = [];
+            idsConsumosPorSocio[key].push(fila.id_consumo);
+        }
+
+        // 3. Calcular fecha de vencimiento: 15 días desde hoy
+        const fechaVencimiento = new Date();
+        fechaVencimiento.setDate(fechaVencimiento.getDate() + 15);
+
+        // 4. Insertar una factura por cada socio
+        let facturasGeneradas = 0;
+        for (const id_socio of Object.keys(totalesPorSocio)) {
+            const montoTotal = Number(totalesPorSocio[id_socio].toFixed(2));
+
+            const insertFacturaQuery = `
+                INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_vencimiento, id_usuario_emisor)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id_factura
+            `;
+            await client.query(insertFacturaQuery, [
+                id_socio,
+                'Consumos del mes',
+                montoTotal,
+                montoTotal,
+                fechaVencimiento.toISOString().split('T')[0],
+                id_usuario_emisor,
+            ]);
+
+            // 5. Marcar esos consumos como "Facturado"
+            const idsConsumos = idsConsumosPorSocio[id_socio];
+            await client.query(
+                `UPDATE consumos SET estado = 'Facturado' WHERE id_consumo = ANY($1::int[])`,
+                [idsConsumos]
+            );
+
+            facturasGeneradas++;
+        }
+
+        await client.query('COMMIT');
+
+        res.status(201).json({
+            mensaje: `Facturación mensual generada con éxito.`,
+            facturas_generadas: facturasGeneradas,
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error al generar facturación mensual:', error);
+        res.status(500).json({ mensaje: 'Error interno al generar la facturación mensual.' });
+    } finally {
+        client.release();
+    }
+};
+
+// Función para LISTAR socios morosos (facturas vencidas y no pagadas).
+// Usado por el panel de Cobranzas (Gestionar Morosidad).
+const obtenerFacturasMorosas = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                f.id_factura,
+                f.id_socio,
+                f.concepto,
+                f.monto_base,
+                f.monto_total,
+                f.fecha_emision,
+                f.fecha_vencimiento,
+                f.estado_pago,
+                soc.dni,
+                soc.nombres,
+                soc.apellidos,
+                td.siglas AS tipo_doc_siglas
+            FROM facturacion f
+            INNER JOIN socios soc ON f.id_socio = soc.id_socio
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            WHERE f.estado_pago != 'Pagada' AND f.fecha_vencimiento < CURRENT_DATE
+            ORDER BY f.fecha_vencimiento ASC
+        `;
+        const resultado = await pool.query(query);
+
+        const facturas = resultado.rows.map((f) => {
+            const diasMora = Math.max(
+                0,
+                Math.floor((new Date() - new Date(f.fecha_vencimiento)) / (1000 * 60 * 60 * 24))
+            );
+            return {
+                ...f,
+                monto_base: Number(f.monto_base),
+                monto_total: Number(f.monto_total),
+                dias_mora: diasMora,
+            };
+        });
+
+        res.status(200).json(facturas);
+    } catch (error) {
+        console.error('Error al obtener facturas morosas:', error);
+        res.status(500).json({ mensaje: 'Error al cargar las facturas morosas.' });
+    }
+};
+
 module.exports = {
-    obtenerConsumosPendientes
+    obtenerConsumosPendientes,
+    generarFacturacionMensual,
+    obtenerFacturasMorosas
 };
