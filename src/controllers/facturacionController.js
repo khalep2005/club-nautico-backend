@@ -66,9 +66,6 @@ const obtenerConsumosPendientes = async (req, res) => {
 };
 
 // Función para GENERAR la facturación mensual (Finanzas).
-// Toma todos los consumos "Pendiente de Facturación", los agrupa por socio,
-// crea una fila en "facturacion" por cada socio, y marca esos consumos
-// como "Facturado" para que no se dupliquen en el siguiente cierre de mes.
 const generarFacturacionMensual = async (req, res) => {
     const id_usuario_emisor = req.usuario.id_usuario;
     const client = await pool.connect();
@@ -103,31 +100,34 @@ const generarFacturacionMensual = async (req, res) => {
         const fechaVencimiento = new Date();
         fechaVencimiento.setDate(fechaVencimiento.getDate() + 15);
 
-        // 4. Insertar una factura por cada socio
         let facturasGeneradas = 0;
         for (const id_socio of Object.keys(totalesPorSocio)) {
             const montoTotal = Number(totalesPorSocio[id_socio].toFixed(2));
 
+            // 4. Insertar una factura por cada socio (Nota: id_factura_padre es null por defecto)
             const insertFacturaQuery = `
-                INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_emision, fecha_vencimiento, id_usuario_emisor)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_emision, fecha_vencimiento, estado_pago, id_usuario_emisor)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING id_factura
             `;
-            await client.query(insertFacturaQuery, [
+            const facturaResult = await client.query(insertFacturaQuery, [
                 id_socio,
                 'Consumos del mes',
                 montoTotal,
                 montoTotal,
                 new Date().toISOString().split('T')[0],
                 fechaVencimiento.toISOString().split('T')[0],
+                'Pendiente', // Estado inicial
                 id_usuario_emisor,
             ]);
 
-            // 5. Marcar esos consumos como "Facturado"
+            const idNuevaFactura = facturaResult.rows[0].id_factura;
+
+            // 5. Marcar consumos como "Facturado" Y ASIGNARLES EL ID DE FACTURA
             const idsConsumos = idsConsumosPorSocio[id_socio];
             await client.query(
-                `UPDATE consumos SET estado = 'Facturado' WHERE id_consumo = ANY($1::int[])`,
-                [idsConsumos]
+                `UPDATE consumos SET estado = 'Facturado', id_factura = $2 WHERE id_consumo = ANY($1::int[])`,
+                [idsConsumos, idNuevaFactura]
             );
 
             facturasGeneradas++;
@@ -195,8 +195,81 @@ const obtenerFacturasMorosas = async (req, res) => {
     }
 };
 
+// Función para FRACCIONAR una deuda en múltiples cuotas.
+// Toma una factura pendiente, la marca como "Fraccionada", y crea N nuevas facturas hijas.
+const fraccionarDeuda = async (req, res) => {
+    const { id_factura, cuotas } = req.body;
+    const id_usuario_emisor = req.usuario.id_usuario;
+    
+    if (!id_factura || !cuotas || cuotas < 2 || cuotas > 6) {
+        return res.status(400).json({ mensaje: 'Se requiere un ID de factura válido y un número de cuotas entre 2 y 6.' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Obtener la factura original
+        const facturaQuery = `SELECT * FROM facturacion WHERE id_factura = $1 AND estado_pago != 'Pagada' AND estado_pago != 'Fraccionada'`;
+        const resultFactura = await client.query(facturaQuery, [id_factura]);
+
+        if (resultFactura.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ mensaje: 'Factura no encontrada o ya procesada.' });
+        }
+
+        const facturaOriginal = resultFactura.rows[0];
+        const montoPorCuota = Number((facturaOriginal.monto_total / cuotas).toFixed(2));
+
+        // 2. Marcar la original como Fraccionada
+        await client.query(`UPDATE facturacion SET estado_pago = 'Fraccionada' WHERE id_factura = $1`, [id_factura]);
+
+        // 3. Generar las N cuotas hijas
+        const insertCuotaQuery = `
+            INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_emision, fecha_vencimiento, estado_pago, id_usuario_emisor, id_factura_padre, numero_cuota)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `;
+
+        for (let i = 1; i <= cuotas; i++) {
+            // Cada cuota vence un mes después de la anterior
+            const fechaVencimiento = new Date(facturaOriginal.fecha_emision);
+            fechaVencimiento.setMonth(fechaVencimiento.getMonth() + i);
+
+            await client.query(insertCuotaQuery, [
+                facturaOriginal.id_socio,
+                `Fraccionamiento - Cuota ${i}/${cuotas}`,
+                montoPorCuota,
+                montoPorCuota,
+                new Date().toISOString().split('T')[0],
+                fechaVencimiento.toISOString().split('T')[0],
+                'Pendiente',
+                id_usuario_emisor,
+                id_factura, // Referencia recursiva
+                i // Número de cuota
+            ]);
+        }
+
+        await client.query('COMMIT');
+
+        res.status(201).json({
+            mensaje: `Deuda fraccionada exitosamente en ${cuotas} cuotas.`,
+            cuotas_generadas: cuotas,
+            monto_por_cuota: montoPorCuota
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error al fraccionar deuda:', error);
+        res.status(500).json({ mensaje: 'Error interno al procesar el fraccionamiento.' });
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     obtenerConsumosPendientes,
     generarFacturacionMensual,
-    obtenerFacturasMorosas
+    obtenerFacturasMorosas,
+    fraccionarDeuda
 };

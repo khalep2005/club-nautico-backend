@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { obtenerConsumosPendientes, generarFacturacionMensual, obtenerFacturasMorosas } = require('../controllers/facturacionController');
+const { obtenerConsumosPendientes, generarFacturacionMensual, obtenerFacturasMorosas, fraccionarDeuda } = require('../controllers/facturacionController');
 const { verificarToken, autorizarRoles } = require('../middlewares/authMiddleware');
 
 // RUTA GET: Listar consumos pendientes de facturación, agrupados por socio
@@ -14,5 +14,9 @@ router.post('/generar', verificarToken, autorizarRoles(4), generarFacturacionMen
 // RUTA GET: Listar facturas vencidas sin pagar (morosidad)
 // Acceso: Jefe (1) y Cobranza (5)
 router.get('/morosos', verificarToken, autorizarRoles(1, 5), obtenerFacturasMorosas);
+
+// RUTA POST: Fraccionar una deuda existente en múltiples cuotas
+// Acceso: SOLO Finanzas (4)
+router.post('/fraccionar', verificarToken, autorizarRoles(4), fraccionarDeuda);
 
 module.exports = router;
