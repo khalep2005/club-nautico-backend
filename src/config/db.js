@@ -12,9 +12,9 @@ const pool = new Pool({
 // Probamos la conexión nada más arrancar
 pool.connect((err, client, release) => {
     if (err) {
-        return console.error('❌ Error al conectar a la base de datos:', err.stack);
+        return console.error(' Error al conectar a la base de datos:', err.stack);
     }
-    console.log('✅ Conexión exitosa a la base de datos PostgreSQL en Supabase');
+    console.log(' Conexión exitosa a la base de datos PostgreSQL en Supabase');
     release();
 });
 
