@@ -23,11 +23,12 @@ const radasRoutes = require('./routes/radasRoutes');
 const tripulantesRoutes = require('./routes/tripulantesRoutes');
 const zarpesRoutes = require('./routes/zarpesRoutes');
 const consumoRoutes = require('./routes/consumoRoutes');
-
+const facturacionRoutes = require('./routes/facturacionRoutes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/solicitudes', solicitudesRoutes);
 app.use('/api/consumos', consumoRoutes);
+app.use('/api/facturacion', facturacionRoutes);
 app.use('/api/socios', sociosRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/embarcaciones', embarcacionesRoutes);
