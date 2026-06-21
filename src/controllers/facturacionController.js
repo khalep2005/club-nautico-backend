@@ -109,8 +109,8 @@ const generarFacturacionMensual = async (req, res) => {
             const montoTotal = Number(totalesPorSocio[id_socio].toFixed(2));
 
             const insertFacturaQuery = `
-                INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_vencimiento, id_usuario_emisor)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_emision, fecha_vencimiento, id_usuario_emisor)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id_factura
             `;
             await client.query(insertFacturaQuery, [
@@ -118,6 +118,7 @@ const generarFacturacionMensual = async (req, res) => {
                 'Consumos del mes',
                 montoTotal,
                 montoTotal,
+                new Date().toISOString().split('T')[0],
                 fechaVencimiento.toISOString().split('T')[0],
                 id_usuario_emisor,
             ]);
