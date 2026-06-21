@@ -274,7 +274,8 @@ const obtenerEstadosCuentaGeneral = async (req, res) => {
                 s.nombres,
                 s.apellidos,
                 COALESCE(SUM(f.monto_total), 0) AS total_deuda,
-                COALESCE(SUM(CASE WHEN f.fecha_vencimiento < CURRENT_DATE THEN 1 ELSE 0 END), 0) AS facturas_vencidas
+                COALESCE(SUM(CASE WHEN f.fecha_vencimiento < CURRENT_DATE THEN 1 ELSE 0 END), 0) AS facturas_vencidas,
+                COALESCE(SUM(CASE WHEN f.id_factura_padre IS NOT NULL THEN 1 ELSE 0 END), 0) AS cuotas_fraccionadas
             FROM socios s
             LEFT JOIN facturacion f ON s.id_socio = f.id_socio AND f.estado_pago NOT IN ('Pagada', 'Fraccionada')
             GROUP BY s.id_socio, s.nombres, s.apellidos
@@ -282,13 +283,17 @@ const obtenerEstadosCuentaGeneral = async (req, res) => {
         `;
         const resultado = await pool.query(query);
 
-        // Lógica de los 3 semáforos
         const estados = resultado.rows.map(row => {
             let estadoFinanciero = 'Al día';
             
             if (row.total_deuda > 0) {
-                // Si debe dinero, revisamos si alguna factura ya venció
-                estadoFinanciero = row.facturas_vencidas > 0 ? 'Moroso' : 'Pendiente';
+                if (row.facturas_vencidas > 0) {
+                    estadoFinanciero = 'Moroso'; // El castigo máximo gana si hay alguna vencida
+                } else if (row.cuotas_fraccionadas > 0) {
+                    estadoFinanciero = 'Fraccionado'; // Si no debe atrasos y tiene cuotas
+                } else {
+                    estadoFinanciero = 'Pendiente'; // Factura normal a tiempo
+                }
             }
 
             return {
@@ -305,7 +310,6 @@ const obtenerEstadosCuentaGeneral = async (req, res) => {
         res.status(500).json({ mensaje: 'Error al cargar los estados de cuenta.' });
     }
 };
-
 const obtenerDashboardFinanzas = async (req, res) => {
     try {
         // 1. KPI: Lo que falta facturar (Consumos de Secretaría)
@@ -326,8 +330,7 @@ const obtenerDashboardFinanzas = async (req, res) => {
             SELECT COALESCE(SUM(monto_total), 0) AS valor 
             FROM facturacion 
             WHERE estado_pago NOT IN ('Pagada', 'Fraccionada') 
-              AND fecha_vencimiento < CURRENT_DATE 
-              AND id_factura_padre IS NULL
+              AND fecha_vencimiento < CURRENT_DATE
         `);
 
         // Datos para Gráfica de Torta (Se mantiene igual)
