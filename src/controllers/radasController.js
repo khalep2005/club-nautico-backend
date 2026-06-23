@@ -27,6 +27,15 @@ const asignarRada = async (req, res) => {
     const { id_embarcacion } = req.body;
 
     try {
+        // REGLA DE NEGOCIO: Validar que la embarcación esté registrada y validada por Capitanía
+        const checkEmb = await pool.query("SELECT estado_capitania FROM embarcaciones WHERE id_embarcacion = $1", [id_embarcacion]);
+        if (checkEmb.rows.length === 0) {
+            return res.status(404).json({ mensaje: 'Embarcación no encontrada.' });
+        }
+        if (checkEmb.rows[0].estado_capitania !== 'Validado') {
+            return res.status(400).json({ mensaje: 'No se puede asignar una rada a una embarcación que no ha sido validada por la Dirección de Capitanías.' });
+        }
+
         const query = `
             UPDATE radas 
             SET id_embarcacion = $1, estado = 'Ocupado' 

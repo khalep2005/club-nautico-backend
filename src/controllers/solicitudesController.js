@@ -15,24 +15,48 @@ const crearSolicitud = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 2. REGLA DE NEGOCIO: Evitar doble inscripción verificando el número de documento
-        const checkDuplicado = await client.query('SELECT id_socio FROM socios WHERE dni = $1', [dni]);
-        
-        if (checkDuplicado.rows.length > 0) {
-            await client.query('ROLLBACK'); // Cancelamos la operación
-            return res.status(400).json({ mensaje: 'Rechazado: El número de documento ingresado ya tiene una inscripción registrada en el Club.' });
+        // REGLA DE NEGOCIO: La política es aceptar solo a socios del tipo "pagador"
+        const clasifNormalizada = clasificacion ? clasificacion.trim().toLowerCase() : '';
+        if (!clasifNormalizada.includes('pagador')) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ 
+                mensaje: 'Rechazado por política de riesgo: El club solo acepta socios con clasificación de tipo Pagador.' 
+            });
         }
 
-        // 3. Insertar en la tabla SOCIOS incluyendo la CLASIFICACIÓN
-        const insertSocioQuery = `
-            INSERT INTO socios (id_tipo_doc, dni, nombres, apellidos, telefono,correo, estado_membresia, clasificacion) 
-            VALUES ($1, $2, $3, $4, $5, $6, 'Pendiente', $7) 
-            RETURNING id_socio
-        `;
-        const valoresSocio = [id_tipo_doc || 1, dni, nombres, apellidos, telefono || '', correo || '', clasificacion];
-        const resSocio = await client.query(insertSocioQuery, valoresSocio);
+        // 2. REGLA DE NEGOCIO: Evitar doble inscripción verificando el número de documento
+        const checkDuplicado = await client.query('SELECT id_socio, estado_membresia FROM socios WHERE dni = $1', [dni]);
         
-        const nuevoIdSocio = resSocio.rows[0].id_socio;
+        let nuevoIdSocio;
+        if (checkDuplicado.rows.length > 0) {
+            const socioExistente = checkDuplicado.rows[0];
+            
+            // Si el socio existente está en estado 'Rechazado', permitimos que vuelva a enviar su solicitud (subsanar)
+            if (socioExistente.estado_membresia === 'Rechazado') {
+                const updateSocioQuery = `
+                    UPDATE socios 
+                    SET id_tipo_doc = $1, nombres = $2, apellidos = $3, telefono = $4, correo = $5, estado_membresia = 'Pendiente', clasificacion = $6
+                    WHERE id_socio = $7
+                `;
+                await client.query(updateSocioQuery, [id_tipo_doc || 1, nombres, apellidos, telefono || '', correo || '', clasificacion, socioExistente.id_socio]);
+                nuevoIdSocio = socioExistente.id_socio;
+            } else {
+                await client.query('ROLLBACK'); // Cancelamos la operación
+                return res.status(400).json({ 
+                    mensaje: 'Rechazado: El número de documento ingresado ya tiene una inscripción activa o pendiente registrada en el Club.' 
+                });
+            }
+        } else {
+            // 3. Insertar en la tabla SOCIOS incluyendo la CLASIFICACIÓN
+            const insertSocioQuery = `
+                INSERT INTO socios (id_tipo_doc, dni, nombres, apellidos, telefono, correo, estado_membresia, clasificacion) 
+                VALUES ($1, $2, $3, $4, $5, $6, 'Pendiente', $7) 
+                RETURNING id_socio
+            `;
+            const valoresSocio = [id_tipo_doc || 1, dni, nombres, apellidos, telefono || '', correo || '', clasificacion];
+            const resSocio = await client.query(insertSocioQuery, valoresSocio);
+            nuevoIdSocio = resSocio.rows[0].id_socio;
+        }
 
         // 4. Insertar en la tabla SOLICITUDES
         const insertSolicitudQuery = `
@@ -103,25 +127,45 @@ const evaluarSolicitud = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Actualizar la tabla SOLICITUDES
+        // 1. Obtener la solicitud para verificar su tipo e id_socio
+        const solQuery = await client.query("SELECT id_socio, tipo_solicitud FROM solicitudes WHERE id_solicitud = $1", [id]);
+        if (solQuery.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ mensaje: 'Solicitud no encontrada.' });
+        }
+        
+        const { id_socio, tipo_solicitud } = solQuery.rows[0];
+
+        // REGLA DE NEGOCIO: Si es una solicitud de Retiro y se aprueba, generar liquidación administrativa y validar deudas
+        if (estado_nuevo === 'Aprobado' && tipo_solicitud === 'Retiro') {
+            const deudasQuery = await client.query(
+                "SELECT COALESCE(SUM(monto_total), 0) AS total_pendiente FROM facturacion WHERE id_socio = $1 AND estado_pago != 'Pagada'",
+                [id_socio]
+            );
+            const totalDeuda = parseFloat(deudasQuery.rows[0].total_pendiente);
+            if (totalDeuda > 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ 
+                    mensaje: `No se puede aprobar el retiro. El socio mantiene una Liquidación Administrativa pendiente de S/ ${totalDeuda.toFixed(2)}. Debe cancelar todos sus saldos antes de proceder con la baja.` 
+                });
+            }
+        }
+
+        // 2. Actualizar la tabla SOLICITUDES
         const updateSolicitudQuery = `
             UPDATE solicitudes 
             SET estado = $1, observacion = $2, id_usuario_revisor = $3, fecha_resolucion = NOW()
             WHERE id_solicitud = $4
-            RETURNING id_socio
         `;
-        const resSolicitud = await client.query(updateSolicitudQuery, [estado_nuevo, observacion || null, id_revisor, id]);
+        await client.query(updateSolicitudQuery, [estado_nuevo, observacion || null, id_revisor, id]);
 
-        if (resSolicitud.rowCount === 0) {
-            await client.query('ROLLBACK');
-            return res.status(404).json({ mensaje: 'Solicitud no encontrada.' });
+        // 3. Actualizar la tabla SOCIOS
+        // Si aprueba una inscripción, el socio pasa a estar 'Al día'. Si se aprueba un retiro, pasa a 'Retirado'.
+        // Si se rechaza, pasa a 'Rechazado'.
+        let estadoSocio = 'Rechazado';
+        if (estado_nuevo === 'Aprobado') {
+            estadoSocio = tipo_solicitud === 'Retiro' ? 'Retirado' : 'Al día';
         }
-
-        const id_socio = resSolicitud.rows[0].id_socio;
-
-        // 2. Actualizar la tabla SOCIOS
-        // Si aprueba, el socio pasa a estar 'Al día'. Si rechaza, pasa a 'Rechazado'.
-        const estadoSocio = estado_nuevo === 'Aprobado' ? 'Al día' : 'Rechazado';
         
         const updateSocioQuery = `
             UPDATE socios 
