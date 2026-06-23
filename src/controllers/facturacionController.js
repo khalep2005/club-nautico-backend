@@ -3,7 +3,7 @@ const pool = require('../config/db');
 // Función para LISTAR los consumos pendientes de facturación, agrupados por socio.
 const obtenerConsumosPendientes = async (req, res) => {
     try {
-        // 1. Traer todos los consumos pendientes, con datos básicos del socio
+        // Traer todos los consumos pendientes, con datos básicos del socio
         const query = `
             SELECT 
                 c.id_consumo,
@@ -24,7 +24,7 @@ const obtenerConsumosPendientes = async (req, res) => {
         `;
         const resultado = await pool.query(query);
 
-        // 2. Agrupar en memoria por id_socio
+        // Agrupar en memoria por id_socio
         const agrupado = {};
         for (const fila of resultado.rows) {
             const key = fila.id_socio;
@@ -49,7 +49,7 @@ const obtenerConsumosPendientes = async (req, res) => {
             });
         }
 
-        // 3. Redondear el total a 2 decimales y devolver como array
+        // Redondear el total a 2 decimales y devolver como array
         const listaFinal = Object.values(agrupado).map((socio) => ({
             ...socio,
             total_consumos: Number(socio.total_consumos.toFixed(2)),
@@ -62,6 +62,67 @@ const obtenerConsumosPendientes = async (req, res) => {
     }
 };
 
+// Función para LISTAR todos los consumos (historial general), agrupados por socio.
+const obtenerTodosConsumos = async (req, res) => {
+    try {
+        // Traer todos los consumos, con datos básicos del socio
+        const query = `
+            SELECT 
+                c.id_consumo,
+                c.servicio,
+                c.monto,
+                c.descripcion,
+                c.fecha_consumo,
+                soc.id_socio,
+                soc.dni,
+                soc.nombres,
+                soc.apellidos,
+                td.siglas AS tipo_doc_siglas
+            FROM consumos c
+            INNER JOIN socios soc ON c.id_socio = soc.id_socio
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            ORDER BY soc.apellidos ASC, c.fecha_consumo DESC
+        `;
+        const resultado = await pool.query(query);
+
+        // Agrupar en memoria por id_socio
+        const agrupado = {};
+        for (const fila of resultado.rows) {
+            const key = fila.id_socio;
+            if (!agrupado[key]) {
+                agrupado[key] = {
+                    id_socio: fila.id_socio,
+                    dni: fila.dni,
+                    tipo_doc_siglas: fila.tipo_doc_siglas,
+                    nombres: fila.nombres,
+                    apellidos: fila.apellidos,
+                    total_consumos: 0,
+                    consumos: [],
+                };
+            }
+            agrupado[key].total_consumos += Number(fila.monto);
+            agrupado[key].consumos.push({
+                id_consumo: fila.id_consumo,
+                servicio: fila.servicio,
+                monto: Number(fila.monto),
+                descripcion: fila.descripcion,
+                fecha_consumo: fila.fecha_consumo,
+            });
+        }
+
+        // Redondear el total a 2 decimales y devolver como array
+        const listaFinal = Object.values(agrupado).map((socio) => ({
+            ...socio,
+            total_consumos: Number(socio.total_consumos.toFixed(2)),
+        }));
+
+        res.status(200).json(listaFinal);
+    } catch (error) {
+        console.error('Error al obtener todos los consumos:', error);
+        res.status(500).json({ mensaje: 'Error al cargar el historial de consumos.' });
+    }
+};
+
 // Función para GENERAR la facturación mensual (Finanzas).
 const generarFacturacionMensual = async (req, res) => {
     const id_usuario_emisor = req.usuario.id_usuario;
@@ -70,7 +131,7 @@ const generarFacturacionMensual = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Obtener todos los socios activos (que no estén rechazados, pendientes o de baja)
+        // Obtener todos los socios activos (que no estén rechazados, pendientes o de baja)
         const sociosQuery = `
             SELECT id_socio, nombres, apellidos
             FROM socios
@@ -204,12 +265,14 @@ const obtenerFacturasMorosas = async (req, res) => {
         `;
         const resultado = await pool.query(query);
 
+        const tasaMensual = parseFloat(req.query.tasa_mensual) || 1.0;
+        const tasaDiariaSBS = (tasaMensual / 100) / 30;
+
         const facturas = resultado.rows.map((f) => {
             const diasMora = Math.max(
                 0,
                 Math.floor((new Date() - new Date(f.fecha_vencimiento)) / (1000 * 60 * 60 * 24))
             );
-            const tasaDiariaSBS = 0.00033; // ~1% mensual aprox.
             const interesMora = Number((Number(f.monto_base) * tasaDiariaSBS * diasMora).toFixed(2));
             const totalConInteres = Number((Number(f.monto_base) + interesMora).toFixed(2));
 
@@ -435,7 +498,8 @@ const registrarPago = async (req, res) => {
         const fechaVencimiento = new Date(factura.fecha_vencimiento);
         const hoy = new Date();
         const diasMora = Math.max(0, Math.floor((hoy - fechaVencimiento) / (1000 * 60 * 60 * 24)));
-        const tasaDiariaSBS = 0.00033; // ~1% mensual aprox.
+        const tasaMensual = parseFloat(req.body.tasa_mensual) || 1.0;
+        const tasaDiariaSBS = (tasaMensual / 100) / 30;
         const interesMora = Number((Number(factura.monto_base) * tasaDiariaSBS * diasMora).toFixed(2));
         const montoFinal = Number((Number(factura.monto_base) + interesMora).toFixed(2));
 
@@ -486,6 +550,7 @@ const registrarPago = async (req, res) => {
 
 module.exports = {
     obtenerConsumosPendientes,
+    obtenerTodosConsumos,
     generarFacturacionMensual,
     obtenerFacturasMorosas,
     fraccionarDeuda,

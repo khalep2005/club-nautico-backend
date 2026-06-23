@@ -4,6 +4,7 @@ const router = express.Router();
 
 const { 
     obtenerConsumosPendientes, 
+    obtenerTodosConsumos,
     generarFacturacionMensual, 
     obtenerFacturasMorosas, 
     fraccionarDeuda,
@@ -12,17 +13,21 @@ const {
     registrarPago
 } = require('../controllers/facturacionController');
 
-// Importación de middlewares
+
 const { verificarToken, autorizarRoles } = require('../middlewares/authMiddleware');
 
 
 
 // RUTA GET: Listar consumos pendientes de facturación, agrupados por socio
-// Acceso: Jefe  y Finanzas 
-router.get('/consumos-pendientes', verificarToken, autorizarRoles(1, 4), obtenerConsumosPendientes);
+// Acceso: Jefe , Secretaría  y Finanzas 
+router.get('/consumos-pendientes', verificarToken, autorizarRoles(1, 2, 4), obtenerConsumosPendientes);
+
+// RUTA GET: Listar todos los consumos (historial general), agrupados por socio
+// Acceso: Jefe , Secretaría y Finanzas 
+router.get('/consumos', verificarToken, autorizarRoles(1, 2, 4), obtenerTodosConsumos);
 
 // RUTA POST: Generar la facturación mensual (consolida consumos pendientes en facturas)
-// Acceso:  Finanzas 
+// Acceso: Finanzas 
 router.post('/generar', verificarToken, autorizarRoles(4), generarFacturacionMensual);
 
 // RUTA GET: Listar facturas vencidas sin pagar (morosidad)
