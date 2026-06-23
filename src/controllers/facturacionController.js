@@ -70,38 +70,67 @@ const generarFacturacionMensual = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // 1. Traer consumos pendientes agrupados por socio
-        const consumosQuery = `
-            SELECT id_consumo, id_socio, monto
-            FROM consumos
-            WHERE estado = 'Pendiente de Facturación'
+        // 1. Obtener todos los socios activos (que no estén rechazados, pendientes o de baja)
+        const sociosQuery = `
+            SELECT id_socio, nombres, apellidos
+            FROM socios
+            WHERE estado_membresia IN ('Al día', 'Moroso')
         `;
-        const resConsumos = await client.query(consumosQuery);
+        const resSocios = await client.query(sociosQuery);
 
-        if (resConsumos.rows.length === 0) {
+        if (resSocios.rows.length === 0) {
             await client.query('ROLLBACK');
-            return res.status(200).json({ mensaje: 'No hay consumos pendientes para facturar.', facturas_generadas: 0 });
+            return res.status(200).json({ mensaje: 'No hay socios activos registrados para facturar.', facturas_generadas: 0 });
         }
 
-        // 2. Agrupar montos por socio
-        const totalesPorSocio = {};
-        const idsConsumosPorSocio = {};
-        for (const fila of resConsumos.rows) {
-            const key = fila.id_socio;
-            totalesPorSocio[key] = (totalesPorSocio[key] || 0) + Number(fila.monto);
-            if (!idsConsumosPorSocio[key]) idsConsumosPorSocio[key] = [];
-            idsConsumosPorSocio[key].push(fila.id_consumo);
-        }
-
-        // 3. Calcular fecha de vencimiento: 15 días desde hoy
+        // Fecha de vencimiento: 15 días desde hoy
         const fechaVencimiento = new Date();
         fechaVencimiento.setDate(fechaVencimiento.getDate() + 15);
+        const fechaVencimientoStr = fechaVencimiento.toISOString().split('T')[0];
+        const fechaEmisionStr = new Date().toISOString().split('T')[0];
 
         let facturasGeneradas = 0;
-        for (const id_socio of Object.keys(totalesPorSocio)) {
-            const montoTotal = Number(totalesPorSocio[id_socio].toFixed(2));
 
-            // 4. Insertar una factura por cada socio (Nota: id_factura_padre es null por defecto)
+        for (const socio of resSocios.rows) {
+            const { id_socio, nombres, apellidos } = socio;
+
+            // Rubro 1: Membresía fija mensual (S/ 500)
+            const costoMembresia = 500.00;
+
+            // Rubro 2: Rada por cada embarcación (mooring fee, S/ 150 por rada asignada)
+            const radasQuery = `
+                SELECT COUNT(*) AS radas_count
+                FROM radas r
+                INNER JOIN embarcaciones e ON r.id_embarcacion = e.id_embarcacion
+                WHERE e.id_socio = $1
+            `;
+            const resRadas = await client.query(radasQuery, [id_socio]);
+            const radasCount = parseInt(resRadas.rows[0].radas_count) || 0;
+            const costoRadas = radasCount * 150.00;
+
+            // Rubro 3: Servicios adicionales pendientes
+            const consumosQuery = `
+                SELECT id_consumo, monto
+                FROM consumos
+                WHERE id_socio = $1 AND estado = 'Pendiente de Facturación'
+            `;
+            const resConsumos = await client.query(consumosQuery, [id_socio]);
+            
+            let costoConsumos = 0;
+            const idsConsumos = [];
+            for (const c of resConsumos.rows) {
+                costoConsumos += Number(c.monto);
+                idsConsumos.push(c.id_consumo);
+            }
+
+            const montoTotal = Number((costoMembresia + costoRadas + costoConsumos).toFixed(2));
+
+            // Si el monto total es 0 (no debería ya que hay membresía de 500), saltamos
+            if (montoTotal <= 0) continue;
+
+            const concepto = `Facturación Mensual Consolidada: Membresía (S/ 500) + Radas (${radasCount} de S/ 150) + Consumos adicionales (S/ ${costoConsumos.toFixed(2)})`;
+
+            // Insertar una factura consolidada
             const insertFacturaQuery = `
                 INSERT INTO facturacion (id_socio, concepto, monto_base, monto_total, fecha_emision, fecha_vencimiento, estado_pago, id_usuario_emisor)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -109,23 +138,24 @@ const generarFacturacionMensual = async (req, res) => {
             `;
             const facturaResult = await client.query(insertFacturaQuery, [
                 id_socio,
-                'Consumos del mes',
+                concepto,
                 montoTotal,
                 montoTotal,
-                new Date().toISOString().split('T')[0],
-                fechaVencimiento.toISOString().split('T')[0],
-                'Pendiente', // Estado inicial
+                fechaEmisionStr,
+                fechaVencimientoStr,
+                'Pendiente',
                 id_usuario_emisor,
             ]);
 
             const idNuevaFactura = facturaResult.rows[0].id_factura;
 
-            // 5. Marcar consumos como "Facturado" Y ASIGNARLES EL ID DE FACTURA
-            const idsConsumos = idsConsumosPorSocio[id_socio];
-            await client.query(
-                `UPDATE consumos SET estado = 'Facturado', id_factura = $2 WHERE id_consumo = ANY($1::int[])`,
-                [idsConsumos, idNuevaFactura]
-            );
+            // Marcar consumos adicionales del socio como "Facturado" y asignarles el ID de factura
+            if (idsConsumos.length > 0) {
+                await client.query(
+                    `UPDATE consumos SET estado = 'Facturado', id_factura = $2 WHERE id_consumo = ANY($1::int[])`,
+                    [idsConsumos, idNuevaFactura]
+                );
+            }
 
             facturasGeneradas++;
         }
@@ -133,7 +163,7 @@ const generarFacturacionMensual = async (req, res) => {
         await client.query('COMMIT');
 
         res.status(201).json({
-            mensaje: `Facturación mensual generada con éxito.`,
+            mensaje: `Facturación mensual consolidada generada con éxito para ${facturasGeneradas} socios.`,
             facturas_generadas: facturasGeneradas,
         });
 
@@ -179,10 +209,15 @@ const obtenerFacturasMorosas = async (req, res) => {
                 0,
                 Math.floor((new Date() - new Date(f.fecha_vencimiento)) / (1000 * 60 * 60 * 24))
             );
+            const tasaDiariaSBS = 0.00033; // ~1% mensual aprox.
+            const interesMora = Number((Number(f.monto_base) * tasaDiariaSBS * diasMora).toFixed(2));
+            const totalConInteres = Number((Number(f.monto_base) + interesMora).toFixed(2));
+
             return {
                 ...f,
                 monto_base: Number(f.monto_base),
-                monto_total: Number(f.monto_total),
+                monto_total: totalConInteres,
+                interes_sbs: interesMora,
                 dias_mora: diasMora,
             };
         });
@@ -367,11 +402,94 @@ const obtenerDashboardFinanzas = async (req, res) => {
     }
 };
 
+// Función para REGISTRAR EL PAGO de una factura (Cobranza)
+const registrarPago = async (req, res) => {
+    const { id_factura } = req.body;
+    
+    if (!id_factura) {
+        return res.status(400).json({ mensaje: 'El ID de la factura es obligatorio.' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Obtener la factura
+        const queryFactura = `SELECT * FROM facturacion WHERE id_factura = $1`;
+        const resFactura = await client.query(queryFactura, [id_factura]);
+
+        if (resFactura.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ mensaje: 'Factura no encontrada.' });
+        }
+
+        const factura = resFactura.rows[0];
+
+        if (factura.estado_pago === 'Pagada') {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ mensaje: 'La factura ya ha sido pagada.' });
+        }
+
+        // 2. Calcular interés final a la fecha de pago (tasa SBS)
+        const fechaVencimiento = new Date(factura.fecha_vencimiento);
+        const hoy = new Date();
+        const diasMora = Math.max(0, Math.floor((hoy - fechaVencimiento) / (1000 * 60 * 60 * 24)));
+        const tasaDiariaSBS = 0.00033; // ~1% mensual aprox.
+        const interesMora = Number((Number(factura.monto_base) * tasaDiariaSBS * diasMora).toFixed(2));
+        const montoFinal = Number((Number(factura.monto_base) + interesMora).toFixed(2));
+
+        // 3. Registrar el pago
+        const updateFacturaQuery = `
+            UPDATE facturacion 
+            SET estado_pago = 'Pagada', monto_total = $1
+            WHERE id_factura = $2
+        `;
+        await client.query(updateFacturaQuery, [montoFinal, id_factura]);
+
+        // 4. Actualizar el estado del socio si ya no tiene facturas vencidas impagas
+        const checkMorosoQuery = `
+            SELECT COUNT(*) AS facturas_vencidas
+            FROM facturacion
+            WHERE id_socio = $1 
+              AND estado_pago NOT IN ('Pagada', 'Fraccionada') 
+              AND fecha_vencimiento < CURRENT_DATE
+              AND id_factura != $2
+        `;
+        const resMoroso = await client.query(checkMorosoQuery, [factura.id_socio, id_factura]);
+        const facturasVencidas = parseInt(resMoroso.rows[0].facturas_vencidas);
+
+        if (facturasVencidas === 0) {
+            // El socio ya no tiene facturas vencidas, se le devuelve al estado 'Al día'
+            const updateSocioQuery = `UPDATE socios SET estado_membresia = 'Al día' WHERE id_socio = $1`;
+            await client.query(updateSocioQuery, [factura.id_socio]);
+        }
+
+        await client.query('COMMIT');
+
+        res.status(200).json({
+            mensaje: 'Pago registrado con éxito.',
+            monto_base: Number(factura.monto_base),
+            dias_mora: diasMora,
+            interes_sbs: interesMora,
+            total_pagado: montoFinal
+        });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error al registrar pago:', error);
+        res.status(500).json({ mensaje: 'Error interno al registrar el pago de la factura.' });
+    } finally {
+        client.release();
+    }
+};
+
 module.exports = {
     obtenerConsumosPendientes,
     generarFacturacionMensual,
     obtenerFacturasMorosas,
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral,
-    obtenerDashboardFinanzas
+    obtenerDashboardFinanzas,
+    registrarPago
 };
