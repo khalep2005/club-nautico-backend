@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto'); // Librería nativa de Node para generar textos aleatorios seguros
+const crypto = require('crypto'); 
 const pool = require('../config/db');
 
 // 1. INICIAR SESIÓN
@@ -24,17 +24,17 @@ const login = async (req, res) => {
             return res.status(401).json({ mensaje: 'Correo o contraseña incorrectos' });
         }
 
-        // Generar el Access Token (Corto - 15 minutos)
+        // Generar el Access Token (15 minutos)
         const accessToken = jwt.sign(
             { id_usuario: usuario.id_usuario, id_rol: usuario.id_rol },
             process.env.JWT_SECRET,
             { expiresIn: '15m' } 
         );
 
-        // Generar el Refresh Token (Largo - 40 caracteres aleatorios)
+        // Generar el Refresh Token (40 caracteres aleatorios)
         const refreshToken = crypto.randomBytes(40).toString('hex');
         
-        // Calcular fecha de expiración (7 días en el futuro)
+        // Calcular fecha de expiración 
         const fechaExp = new Date();
         fechaExp.setDate(fechaExp.getDate() + 7);
 
@@ -113,7 +113,7 @@ const logout = async (req, res) => {
             return res.status(400).json({ mensaje: 'Se requiere el Refresh Token para cerrar sesión' });
         }
 
-        // "Matar" el token en la base de datos (revocarlo)
+       
         await pool.query(
             'UPDATE Refresh_Tokens SET revocado = TRUE WHERE token = $1',
             [refreshToken]
@@ -185,9 +185,9 @@ const obtenerUsuarios = async (req, res) => {
     }
 };
 
-// Función para EDITAR un usuario
+
 const actualizarUsuario = async (req, res) => {
-    const { id } = req.params; // El ID viene en la URL
+    const { id } = req.params; 
     const { nombres, apellidos, id_rol } = req.body;
 
     try {
