@@ -27,8 +27,8 @@ const crearSolicitud = async (req, res) => {
     const { id_tipo_doc, dni, nombres, apellidos, telefono, correo, tipo_solicitud, clasificacion } = req.body;
 
     // Validación más precisa: requerimos id_tipo_doc y el número (dni)
-    if (!id_tipo_doc || !dni || !nombres || !apellidos || !clasificacion) {
-        return res.status(400).json({ mensaje: 'El tipo y número de documento, nombres, apellidos y clasificación son obligatorios.' });
+    if (!id_tipo_doc || !dni || !nombres || !apellidos || !clasificacion || !telefono || !correo) {
+        return res.status(400).json({ mensaje: 'El tipo y número de documento, nombres, apellidos , clasificación, telefono y correo son obligatorios.' });
     }
 
     // VALIDACIÓN DE FORMATO: Nombres y Apellidos (solo letras, mayúscula inicial por palabra)
@@ -84,7 +84,7 @@ const crearSolicitud = async (req, res) => {
                 VALUES ($1, $2, $3, $4, $5, $6, 'Pendiente', $7) 
                 RETURNING id_socio
             `;
-            const valoresSocio = [id_tipo_doc || 1, dni, nombres, apellidos, telefono || '', correo || '', clasificacion];
+            const valoresSocio = [id_tipo_doc || 1, dni, nombres, apellidos, telefono, correo , clasificacion];
             const resSocio = await client.query(insertSocioQuery, valoresSocio);
             nuevoIdSocio = resSocio.rows[0].id_socio;
         }
