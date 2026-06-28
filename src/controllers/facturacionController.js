@@ -638,5 +638,6 @@ module.exports = {
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral,
     obtenerDashboardFinanzas,
-    registrarPago
+    registrarPago,
+    obtenerPagosRealizados  
 };
