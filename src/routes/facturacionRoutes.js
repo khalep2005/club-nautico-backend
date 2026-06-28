@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
 
-
 const { 
     obtenerConsumosPendientes, 
     obtenerTodosConsumos,
     generarFacturacionMensual, 
     obtenerFacturasMorosas, 
+    obtenerFacturasPendientesPorVencer,
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral, 
     obtenerDashboardFinanzas,
     registrarPago
 } = require('../controllers/facturacionController');
+
 
 
 const { verificarToken, autorizarRoles } = require('../middlewares/authMiddleware');
