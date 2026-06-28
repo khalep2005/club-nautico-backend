@@ -10,9 +10,9 @@ const {
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral, 
     obtenerDashboardFinanzas,
-    registrarPago
+    registrarPago,
+    obtenerPagosRealizados  
 } = require('../controllers/facturacionController');
-
 
 
 const { verificarToken, autorizarRoles } = require('../middlewares/authMiddleware');
