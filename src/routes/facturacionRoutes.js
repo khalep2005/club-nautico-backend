@@ -35,6 +35,10 @@ router.post('/generar', verificarToken, autorizarRoles(4), generarFacturacionMen
 // Acceso: Jefe , Finanzas  y Cobranza 
 router.get('/morosos', verificarToken, autorizarRoles(1, 4, 5), obtenerFacturasMorosas);
 
+// RUTA GET: Listar facturas pendientes aún no vencidas (pago anticipado)
+// Acceso: Jefe, Finanzas y Cobranza
+router.get('/por-vencer', verificarToken, autorizarRoles(1, 4, 5), obtenerFacturasPendientesPorVencer);
+
 // RUTA POST: Fraccionar una deuda existente en múltiples cuotas
 // Acceso:  Finanzas 
 router.post('/fraccionar', verificarToken, autorizarRoles(4), fraccionarDeuda);
