@@ -3,7 +3,7 @@
 const bcrypt = require('bcrypt');
 
 //  Mocks 
-jest.mock('../config/db', () => ({
+jest.mock('../../config/db', () => ({
   query: jest.fn(),
 }));
 jest.mock('bcrypt');
