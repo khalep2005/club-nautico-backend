@@ -291,6 +291,51 @@ const generarFacturacionMensual = async (req, res) => {
     }
 };
 
+// Función para LISTAR las facturas pendientes de pago AÚN NO VENCIDAS.
+// Usado por el panel de Cobranza para permitir registrar un pago anticipado,
+// antes de que la factura llegue a su fecha de vencimiento (sin interés moratorio).
+const obtenerFacturasPendientesPorVencer = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                f.id_factura,
+                f.id_socio,
+                f.concepto,
+                f.monto_base,
+                f.monto_total,
+                f.fecha_emision,
+                f.fecha_vencimiento,
+                f.estado_pago,
+                f.id_factura_padre,
+                f.numero_cuota,
+                soc.dni,
+                soc.nombres,
+                soc.apellidos,
+                td.siglas AS tipo_doc_siglas
+            FROM facturacion f
+            INNER JOIN socios soc ON f.id_socio = soc.id_socio
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            WHERE f.estado_pago NOT IN ('Pagada', 'Fraccionada')
+              AND f.fecha_vencimiento >= CURRENT_DATE
+            ORDER BY f.fecha_vencimiento ASC
+        `;
+        const resultado = await pool.query(query);
+
+        const facturas = resultado.rows.map((f) => ({
+            ...f,
+            monto_base: Number(f.monto_base),
+            monto_total: Number(f.monto_total),
+            interes_sbs: 0,
+            dias_mora: 0,
+        }));
+
+        res.status(200).json(facturas);
+    } catch (error) {
+        console.error('Error al obtener facturas pendientes por vencer:', error);
+        res.status(500).json({ mensaje: 'Error al cargar las facturas pendientes por vencer.' });
+    }
+};
+
 // Función para FRACCIONAR una deuda en múltiples cuotas.
 // Toma una factura pendiente, la marca como "Fraccionada", y crea N nuevas facturas hijas.
 const fraccionarDeuda = async (req, res) => {
