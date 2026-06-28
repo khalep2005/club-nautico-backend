@@ -597,6 +597,7 @@ module.exports = {
     obtenerTodosConsumos,
     generarFacturacionMensual,
     obtenerFacturasMorosas,
+    obtenerFacturasPendientesPorVencer,
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral,
     obtenerDashboardFinanzas,
