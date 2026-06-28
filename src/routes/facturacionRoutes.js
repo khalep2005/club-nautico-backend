@@ -55,4 +55,8 @@ router.get('/dashboard', verificarToken, autorizarRoles(1, 4), obtenerDashboardF
 // Acceso: Jefe , Finanzas  y Cobranza 
 router.post('/pagar', verificarToken, autorizarRoles(1, 4, 5), registrarPago);
 
+// RUTA GET: Listar historial de pagos realizados
+// Acceso: Jefe, Finanzas y Cobranza
+router.get('/pagados', verificarToken, autorizarRoles(1, 4, 5), obtenerPagosRealizados);
+
 module.exports = router;
