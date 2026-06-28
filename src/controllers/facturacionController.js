@@ -549,10 +549,10 @@ const registrarPago = async (req, res) => {
 
         // 3. Registrar el pago
         const updateFacturaQuery = `
-            UPDATE facturacion 
-            SET estado_pago = 'Pagada', monto_total = $1
-            WHERE id_factura = $2
-        `;
+         UPDATE facturacion 
+         SET estado_pago = 'Pagada', monto_total = $1, fecha_pago = CURRENT_DATE
+         WHERE id_factura = $2
+         `;
         await client.query(updateFacturaQuery, [montoFinal, id_factura]);
 
         // 4. Actualizar el estado del socio si ya no tiene facturas vencidas impagas
