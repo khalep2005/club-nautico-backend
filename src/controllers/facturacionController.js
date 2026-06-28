@@ -242,25 +242,27 @@ const generarFacturacionMensual = async (req, res) => {
 const obtenerFacturasMorosas = async (req, res) => {
     try {
         const query = `
-            SELECT 
-                f.id_factura,
-                f.id_socio,
-                f.concepto,
-                f.monto_base,
-                f.monto_total,
-                f.fecha_emision,
-                f.fecha_vencimiento,
-                f.estado_pago,
-                soc.dni,
-                soc.nombres,
-                soc.apellidos,
-                td.siglas AS tipo_doc_siglas
-            FROM facturacion f
-            INNER JOIN socios soc ON f.id_socio = soc.id_socio
-            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
-            WHERE f.estado_pago NOT IN ('Pagada', 'Fraccionada') 
-              AND f.fecha_vencimiento < CURRENT_DATE
-            ORDER BY f.fecha_vencimiento ASC
+           SELECT 
+    f.id_factura,
+    f.id_socio,
+    f.concepto,
+    f.monto_base,
+    f.monto_total,
+    f.fecha_emision,
+    f.fecha_vencimiento,
+    f.estado_pago,
+    f.id_factura_padre,
+    f.numero_cuota,
+    soc.dni,
+    soc.nombres,
+    soc.apellidos,
+    td.siglas AS tipo_doc_siglas
+FROM facturacion f
+INNER JOIN socios soc ON f.id_socio = soc.id_socio
+LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+WHERE f.estado_pago NOT IN ('Pagada', 'Fraccionada') 
+  AND f.fecha_vencimiento < CURRENT_DATE
+ORDER BY f.fecha_vencimiento ASC
         `;
         const resultado = await pool.query(query);
 
