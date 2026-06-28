@@ -592,6 +592,43 @@ const registrarPago = async (req, res) => {
     }
 };
 
+const obtenerPagosRealizados = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                f.id_factura,
+                f.id_socio,
+                f.concepto,
+                f.monto_base,
+                f.monto_total,
+                f.fecha_emision,
+                f.fecha_vencimiento,
+                f.fecha_pago,
+                soc.dni,
+                soc.nombres,
+                soc.apellidos,
+                td.siglas AS tipo_doc_siglas
+            FROM facturacion f
+            INNER JOIN socios soc ON f.id_socio = soc.id_socio
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            WHERE f.estado_pago = 'Pagada'
+            ORDER BY f.fecha_pago DESC, f.id_factura DESC
+        `;
+        const resultado = await pool.query(query);
+
+        const pagos = resultado.rows.map((f) => ({
+            ...f,
+            monto_base: Number(f.monto_base),
+            monto_total: Number(f.monto_total),
+        }));
+
+        res.status(200).json(pagos);
+    } catch (error) {
+        console.error('Error al obtener pagos realizados:', error);
+        res.status(500).json({ mensaje: 'Error al cargar el historial de pagos realizados.' });
+    }
+};
+
 module.exports = {
     obtenerConsumosPendientes,
     obtenerTodosConsumos,
