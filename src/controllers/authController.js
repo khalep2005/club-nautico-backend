@@ -28,7 +28,7 @@ const login = async (req, res) => {
         const accessToken = jwt.sign(
             { id_usuario: usuario.id_usuario, id_rol: usuario.id_rol },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' } 
+            { expiresIn: '2m' } 
         );
 
         // Generar el Refresh Token (40 caracteres aleatorios)
