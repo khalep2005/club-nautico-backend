@@ -61,6 +61,6 @@ router.post('/pagar', verificarToken, autorizarRoles(1, 4, 5), registrarPago);
 router.get('/pagados', verificarToken, autorizarRoles(1, 4, 5), obtenerPagosRealizados);
 
 // RUTA GET: Obtener la deuda de un socio específico
-router.get('/deuda/:id', verificarToken, autorizarRoles(1, 4, 5), obtenerDeudaSocio);
+router.get('/deuda/:id', verificarToken, autorizarRoles(1, 3, 4, 5), obtenerDeudaSocio);
 
 module.exports = router;
