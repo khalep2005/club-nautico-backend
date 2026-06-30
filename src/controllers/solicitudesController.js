@@ -1,5 +1,26 @@
 const pool = require('../config/db'); 
 
+function validarNombreOApellido(valor, etiqueta) {
+    const limpio = typeof valor === 'string' ? valor.trim() : '';
+
+    if (!limpio) return `${etiqueta} no puede estar vacío.`;
+    if (limpio.length < 2) return `${etiqueta} debe tener al menos 2 caracteres.`;
+    if (limpio.length > 50) return `${etiqueta} no puede superar los 50 caracteres.`;
+
+    const REGEX_SOLO_LETRAS = /^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$/;
+    if (!REGEX_SOLO_LETRAS.test(limpio)) {
+        return `${etiqueta} solo puede contener letras y espacios, sin números ni símbolos.`;
+    }
+
+    const palabras = limpio.split(/\s+/);
+    const todasConMayuscula = palabras.every((palabra) => /^[A-ZÁÉÍÓÚÑÜ][a-záéíóúñü]*$/.test(palabra));
+    if (!todasConMayuscula) {
+        return `${etiqueta}: cada palabra debe iniciar con mayúscula (ej. "Juan Carlos").`;
+    }
+
+    return null; // sin errores
+}
+
 // Función para CREAR solicitud e inscribir socio (Transacción)
 const crearSolicitud = async (req, res) => {
     // 1. Ahora recibimos la clasificación y el tipo de documento desde el Frontend
@@ -8,6 +29,16 @@ const crearSolicitud = async (req, res) => {
     // Validación más precisa: requerimos id_tipo_doc y el número (dni)
     if (!id_tipo_doc || !dni || !nombres || !apellidos || !clasificacion || !telefono || !correo) {
         return res.status(400).json({ mensaje: 'El tipo y número de documento, nombres, apellidos , clasificación, telefono y correo son obligatorios.' });
+    }
+
+    // VALIDACIÓN DE FORMATO: Nombres y Apellidos (solo letras, mayúscula inicial por palabra)
+    const errorNombres = validarNombreOApellido(nombres, 'Nombres');
+    if (errorNombres) {
+        return res.status(400).json({ mensaje: errorNombres });
+    }
+    const errorApellidos = validarNombreOApellido(apellidos, 'Apellidos');
+    if (errorApellidos) {
+        return res.status(400).json({ mensaje: errorApellidos });
     }
 
     const client = await pool.connect();

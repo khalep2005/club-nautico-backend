@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
 
-
 const { 
     obtenerConsumosPendientes, 
     obtenerTodosConsumos,
     generarFacturacionMensual, 
     obtenerFacturasMorosas, 
+    obtenerFacturasPendientesPorVencer,
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral, 
     obtenerDashboardFinanzas,
-    registrarPago
+    registrarPago,
+    obtenerPagosRealizados  
 } = require('../controllers/facturacionController');
 
 
@@ -34,6 +35,10 @@ router.post('/generar', verificarToken, autorizarRoles(4), generarFacturacionMen
 // Acceso: Jefe , Finanzas  y Cobranza 
 router.get('/morosos', verificarToken, autorizarRoles(1, 4, 5), obtenerFacturasMorosas);
 
+// RUTA GET: Listar facturas pendientes aún no vencidas (pago anticipado)
+// Acceso: Jefe, Finanzas y Cobranza
+router.get('/por-vencer', verificarToken, autorizarRoles(1, 4, 5), obtenerFacturasPendientesPorVencer);
+
 // RUTA POST: Fraccionar una deuda existente en múltiples cuotas
 // Acceso:  Finanzas 
 router.post('/fraccionar', verificarToken, autorizarRoles(4), fraccionarDeuda);
@@ -49,5 +54,9 @@ router.get('/dashboard', verificarToken, autorizarRoles(1, 4), obtenerDashboardF
 // RUTA POST: Registrar el pago de una factura y calcular interés SBS
 // Acceso: Jefe , Finanzas  y Cobranza 
 router.post('/pagar', verificarToken, autorizarRoles(1, 4, 5), registrarPago);
+
+// RUTA GET: Listar historial de pagos realizados
+// Acceso: Jefe, Finanzas y Cobranza
+router.get('/pagados', verificarToken, autorizarRoles(1, 4, 5), obtenerPagosRealizados);
 
 module.exports = router;

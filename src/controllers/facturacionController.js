@@ -237,9 +237,7 @@ const generarFacturacionMensual = async (req, res) => {
     }
 };
 
-// Función para LISTAR socios morosos (facturas vencidas y no pagadas).
-// Usado por el panel de Cobranzas (Gestionar Morosidad).
-const obtenerFacturasMorosas = async (req, res) => {
+   const obtenerFacturasMorosas = async (req, res) => {
     try {
         const query = `
             SELECT 
@@ -251,6 +249,8 @@ const obtenerFacturasMorosas = async (req, res) => {
                 f.fecha_emision,
                 f.fecha_vencimiento,
                 f.estado_pago,
+                f.id_factura_padre,
+                f.numero_cuota,
                 soc.dni,
                 soc.nombres,
                 soc.apellidos,
@@ -260,7 +260,6 @@ const obtenerFacturasMorosas = async (req, res) => {
             LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
             WHERE f.estado_pago NOT IN ('Pagada', 'Fraccionada') 
               AND f.fecha_vencimiento < CURRENT_DATE
-              AND f.id_factura_padre IS NULL
             ORDER BY f.fecha_vencimiento ASC
         `;
         const resultado = await pool.query(query);
@@ -290,7 +289,52 @@ const obtenerFacturasMorosas = async (req, res) => {
         console.error('Error al obtener facturas morosas:', error);
         res.status(500).json({ mensaje: 'Error al cargar las facturas morosas.' });
     }
-};  
+};
+
+// Función para LISTAR las facturas pendientes de pago AÚN NO VENCIDAS.
+// Usado por el panel de Cobranza para permitir registrar un pago anticipado,
+// antes de que la factura llegue a su fecha de vencimiento (sin interés moratorio).
+const obtenerFacturasPendientesPorVencer = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                f.id_factura,
+                f.id_socio,
+                f.concepto,
+                f.monto_base,
+                f.monto_total,
+                f.fecha_emision,
+                f.fecha_vencimiento,
+                f.estado_pago,
+                f.id_factura_padre,
+                f.numero_cuota,
+                soc.dni,
+                soc.nombres,
+                soc.apellidos,
+                td.siglas AS tipo_doc_siglas
+            FROM facturacion f
+            INNER JOIN socios soc ON f.id_socio = soc.id_socio
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            WHERE f.estado_pago NOT IN ('Pagada', 'Fraccionada')
+              AND f.fecha_vencimiento >= CURRENT_DATE
+            ORDER BY f.fecha_vencimiento ASC
+        `;
+        const resultado = await pool.query(query);
+
+        const facturas = resultado.rows.map((f) => ({
+            ...f,
+            monto_base: Number(f.monto_base),
+            monto_total: Number(f.monto_total),
+            interes_sbs: 0,
+            dias_mora: 0,
+        }));
+
+        res.status(200).json(facturas);
+    } catch (error) {
+        console.error('Error al obtener facturas pendientes por vencer:', error);
+        res.status(500).json({ mensaje: 'Error al cargar las facturas pendientes por vencer.' });
+    }
+};
 
 // Función para FRACCIONAR una deuda en múltiples cuotas.
 // Toma una factura pendiente, la marca como "Fraccionada", y crea N nuevas facturas hijas.
@@ -505,10 +549,10 @@ const registrarPago = async (req, res) => {
 
         // 3. Registrar el pago
         const updateFacturaQuery = `
-            UPDATE facturacion 
-            SET estado_pago = 'Pagada', monto_total = $1
-            WHERE id_factura = $2
-        `;
+         UPDATE facturacion 
+         SET estado_pago = 'Pagada', monto_total = $1, fecha_pago = CURRENT_DATE
+         WHERE id_factura = $2
+         `;
         await client.query(updateFacturaQuery, [montoFinal, id_factura]);
 
         // 4. Actualizar el estado del socio si ya no tiene facturas vencidas impagas
@@ -548,13 +592,52 @@ const registrarPago = async (req, res) => {
     }
 };
 
+const obtenerPagosRealizados = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                f.id_factura,
+                f.id_socio,
+                f.concepto,
+                f.monto_base,
+                f.monto_total,
+                f.fecha_emision,
+                f.fecha_vencimiento,
+                f.fecha_pago,
+                soc.dni,
+                soc.nombres,
+                soc.apellidos,
+                td.siglas AS tipo_doc_siglas
+            FROM facturacion f
+            INNER JOIN socios soc ON f.id_socio = soc.id_socio
+            LEFT JOIN tipos_documento td ON soc.id_tipo_doc = td.id_tipo_doc
+            WHERE f.estado_pago = 'Pagada'
+            ORDER BY f.fecha_pago DESC, f.id_factura DESC
+        `;
+        const resultado = await pool.query(query);
+
+        const pagos = resultado.rows.map((f) => ({
+            ...f,
+            monto_base: Number(f.monto_base),
+            monto_total: Number(f.monto_total),
+        }));
+
+        res.status(200).json(pagos);
+    } catch (error) {
+        console.error('Error al obtener pagos realizados:', error);
+        res.status(500).json({ mensaje: 'Error al cargar el historial de pagos realizados.' });
+    }
+};
+
 module.exports = {
     obtenerConsumosPendientes,
     obtenerTodosConsumos,
     generarFacturacionMensual,
     obtenerFacturasMorosas,
+    obtenerFacturasPendientesPorVencer,
     fraccionarDeuda,
     obtenerEstadosCuentaGeneral,
     obtenerDashboardFinanzas,
-    registrarPago
+    registrarPago,
+    obtenerPagosRealizados  
 };

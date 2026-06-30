@@ -6,7 +6,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "test:evidencia": "jest --verbose"
   },
   "keywords": [],
   "author": "",
@@ -17,9 +18,23 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "pdfkit": "^0.19.1",
     "pg": "^8.20.0"
   },
   "devDependencies": {
+    "jest-html-reporter": "^4.4.0",
     "nodemon": "^3.1.14"
-  }
+  },
+  "jest": {
+  "reporters": [
+    "default",
+    ["jest-html-reporter", {
+      "pageTitle": "CF-CN-MEM-02 — Rechazo de Membresía",
+      "outputPath": "./evidencia-tests.html",
+      "includeFailureMsg": true,
+      "includeConsoleLog": true,
+      "theme": "darkTheme"
+    }]
+  ]
+}
 }
