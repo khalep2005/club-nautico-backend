@@ -93,7 +93,7 @@ const renovarToken = async (req, res) => {
         const nuevoAccessToken = jwt.sign(
             { id_usuario: rtData.id_usuario, id_rol: usuario.id_rol },
             process.env.JWT_SECRET,
-            { expiresIn: '15m' }
+            { expiresIn: '2m' }
         );
 
         res.json({ accessToken: nuevoAccessToken });
