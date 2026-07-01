@@ -24,7 +24,7 @@ const login = async (req, res) => {
             return res.status(401).json({ mensaje: 'Correo o contraseña incorrectos' });
         }
 
-        // Generar el Access Token (15 minutos)
+        // Generar el Access Token (2 minutos)
         const accessToken = jwt.sign(
             { id_usuario: usuario.id_usuario, id_rol: usuario.id_rol },
             process.env.JWT_SECRET,
@@ -89,7 +89,7 @@ const renovarToken = async (req, res) => {
         );
         const usuario = userResult.rows[0];
 
-        // Generar un NUEVO Access Token de 15 minutos
+        // Generar un NUEVO Access Token de 2 minutos
         const nuevoAccessToken = jwt.sign(
             { id_usuario: rtData.id_usuario, id_rol: usuario.id_rol },
             process.env.JWT_SECRET,
